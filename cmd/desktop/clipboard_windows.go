@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"golang.org/x/sys/windows"
 	"runtime"
 	"time"
@@ -70,4 +71,40 @@ func writeClipboard(s string) error {
 	}
 	owned = false
 	return nil
+}
+
+func readClipboard() (string, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	for i := 0; ; i++ {
+		ok, _, err := openClipboard.Call(0)
+		if ok != 0 {
+			break
+		}
+		if i == 14 {
+			return "", err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	defer closeClipboard.Call()
+	handle, _, err := user.NewProc("GetClipboardData").Call(13)
+	if handle == 0 {
+		return "", err
+	}
+	size, _, err := kernel.NewProc("GlobalSize").Call(handle)
+	if size < 2 {
+		return "", errors.New("empty clipboard")
+	}
+	ptr, _, err := lock.Call(handle)
+	if ptr == 0 {
+		return "", err
+	}
+	defer unlock.Call(handle)
+	words := unsafe.Slice((*uint16)(unsafe.Pointer(ptr)), min(size/2, 65537))
+	for i, ch := range words {
+		if ch == 0 {
+			return windows.UTF16ToString(words[:i]), nil
+		}
+	}
+	return "", errors.New("clipboard text exceeds limit")
 }

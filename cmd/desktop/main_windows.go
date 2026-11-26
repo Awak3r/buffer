@@ -115,7 +115,7 @@ func receive(p pairing, g cipher.AEAD) error {
 	}
 	defer c.Close()
 	log.Print("Connected. Ready to receive text.")
-	return delivery.Receive(c, g, writeClipboard)
+	return delivery.Receive(c, g, writeClipboard, readClipboard)
 }
 func main() {
 	show := flag.Bool("pair", false, "display local pairing QR")

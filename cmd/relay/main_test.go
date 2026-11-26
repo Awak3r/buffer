@@ -59,7 +59,7 @@ func TestDelivery(t *testing.T) {
 		if code, e := post(token); code != 409 || e != nil {
 			t.Fatalf("busy: %d %v", code, e)
 		}
-		if err = c.WriteJSON(receipt{"another-message", true}); err != nil {
+		if err = c.WriteJSON(receipt{ID: "another-message", OK: true}); err != nil {
 			t.Fatal(err)
 		}
 		select {
@@ -67,7 +67,7 @@ func TestDelivery(t *testing.T) {
 			t.Fatal("accepted wrong receipt")
 		case <-time.After(25 * time.Millisecond):
 		}
-		if err = c.WriteJSON(receipt{msg.ID, want == 204}); err != nil {
+		if err = c.WriteJSON(receipt{ID: msg.ID, OK: want == 204}); err != nil {
 			t.Fatal(err)
 		}
 		if code := <-result; code != want {
@@ -94,7 +94,7 @@ func TestAndroidPayload(t *testing.T) {
 	b, _ := aes.NewCipher(make([]byte, 32))
 	g, _ := cipher.NewGCM(b)
 	written := make(chan string, 1)
-	go delivery.Receive(c, g, func(value string) error { written <- value; return nil })
+	go delivery.Receive(c, g, func(value string) error { written <- value; return nil }, nil)
 	for _, expected := range []int{204, 422} {
 		req, _ := http.NewRequest("POST", s.URL+"/clip", bytes.NewReader(body))
 		req.Header.Set("Authorization", "Bearer test")
@@ -117,5 +117,47 @@ func TestAndroidPayload(t *testing.T) {
 			}
 		}
 		body[len(body)-1] ^= 1
+	}
+}
+
+func TestPull(t *testing.T) {
+	s := httptest.NewServer(&relay{token: "test"})
+	defer s.Close()
+	c, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(s.URL, "http")+"/desktop", http.Header{"Authorization": []string{"Bearer test"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	b, _ := aes.NewCipher(make([]byte, 32))
+	g, _ := cipher.NewGCM(b)
+	reads := make(chan struct{}, 2)
+	go delivery.Receive(c, g, nil, func() (string, error) { reads <- struct{}{}; return "Привет 📋", nil })
+	nonce := make([]byte, 12)
+	proof := g.Seal(nonce, nonce, nil, []byte("buffer/pull/v1"))
+	for _, code := range []int{200, 422} {
+		req, _ := http.NewRequest("POST", s.URL+"/pull", bytes.NewReader(proof))
+		req.Header.Set("Authorization", "Bearer test")
+		res, err := s.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		if err != nil || res.StatusCode != code {
+			t.Fatalf("status %d %v", res.StatusCode, err)
+		}
+		if code == 200 {
+			if len(data) < 28 {
+				t.Fatal("short response")
+			}
+			plain, e := g.Open(nil, data[:12], data[12:], proof)
+			if e != nil || string(plain) != "Привет 📋" {
+				t.Fatal("response mismatch")
+			}
+		}
+		proof[len(proof)-1] ^= 1
+	}
+	if len(reads) != 1 {
+		t.Fatal("invalid proof triggered clipboard read")
 	}
 }

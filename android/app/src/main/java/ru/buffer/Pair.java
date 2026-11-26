@@ -39,8 +39,12 @@ final class Pair {
         return gen.generateKey();
     }
     static byte[] seal(SecretKey key, byte[] plain) throws Exception {
+        return seal(key, plain, null);
+    }
+    static byte[] seal(SecretKey key, byte[] plain, byte[] aad) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, key);
+        if (aad != null) cipher.updateAAD(aad);
         byte[] iv = cipher.getIV();
         if (iv.length != 12) throw new IOException("Invalid nonce size");
         ByteArrayOutputStream out = new ByteArrayOutputStream();

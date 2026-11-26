@@ -15,12 +15,14 @@ import (
 )
 
 type packet struct {
+	Pull bool   `json:"pull,omitempty"`
 	ID   string `json:"id"`
 	Data []byte `json:"data"`
 }
 type receipt struct {
-	ID string `json:"id"`
-	OK bool   `json:"ok"`
+	Data []byte `json:"data,omitempty"`
+	ID   string `json:"id"`
+	OK   bool   `json:"ok"`
 }
 type peer struct {
 	conn    *websocket.Conn
@@ -43,7 +45,7 @@ func (s *relay) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/desktop" && r.Method == "GET":
 		s.listen(w, r)
-	case r.URL.Path == "/clip" && r.Method == "POST":
+	case (r.URL.Path == "/clip" || r.URL.Path == "/pull") && r.Method == "POST":
 		s.send(w, r)
 	default:
 		http.NotFound(w, r)
@@ -72,7 +74,7 @@ func (s *relay) listen(w http.ResponseWriter, r *http.Request) {
 		close(p.done)
 		s.mu.Unlock()
 	}()
-	c.SetReadLimit(256)
+	c.SetReadLimit(96 << 10)
 	c.SetReadDeadline(time.Now().Add(65 * time.Second))
 	c.SetPongHandler(func(string) error { return c.SetReadDeadline(time.Now().Add(65 * time.Second)) })
 	go func() {
@@ -108,7 +110,8 @@ func (s *relay) send(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "payload too large or unreadable", 413)
 		return
 	}
-	if len(b) < 29 {
+	pull := r.URL.Path == "/pull"
+	if (pull && len(b) != 28) || (!pull && len(b) < 29) {
 		http.Error(w, "invalid payload", 400)
 		return
 	}
@@ -128,7 +131,7 @@ func (s *relay) send(w http.ResponseWriter, r *http.Request) {
 	}
 	var id [16]byte
 	rand.Read(id[:])
-	msg := packet{hex.EncodeToString(id[:]), b}
+	msg := packet{ID: hex.EncodeToString(id[:]), Data: b, Pull: pull}
 	p.conn.SetWriteDeadline(time.Now().Add(3 * time.Second))
 	if err = p.conn.WriteJSON(msg); err != nil {
 		p.conn.Close()
@@ -145,6 +148,15 @@ func (s *relay) send(w http.ResponseWriter, r *http.Request) {
 			}
 			if !a.OK {
 				http.Error(w, "clipboard write failed", 422)
+				return
+			}
+			if pull {
+				if len(a.Data) < 29 || len(a.Data) > 65536+28 {
+					http.Error(w, "invalid clipboard response", 502)
+					return
+				}
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Write(a.Data)
 				return
 			}
 			w.WriteHeader(204)
