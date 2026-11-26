@@ -1,0 +1,13 @@
+plugins { id 'com.android.application' version '8.7.3' }
+android {
+    namespace 'ru.buffer'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'ru.buffer'
+        minSdk 26
+        targetSdk 32
+        versionCode 1
+        versionName '0.1'
+    }
+}
+dependencies { implementation 'com.google.zxing:core:3.5.3' }

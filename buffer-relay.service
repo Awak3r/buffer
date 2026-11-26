@@ -1,0 +1,15 @@
+[Unit]
+Description=Buffer clipboard relay
+After=network.target
+
+[Service]
+DynamicUser=yes
+EnvironmentFile=/etc/buffer-relay.env
+ExecStart=/usr/local/bin/buffer-relay
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
