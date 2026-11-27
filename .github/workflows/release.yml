@@ -59,8 +59,11 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Install Android build tools
-        run: sdkmanager 'build-tools;35.0.0'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: '12266719'
+          log-accepted-android-sdk-licenses: false
+          packages: 'build-tools;35.0.0'
       - name: Sign and verify Android APK
         shell: bash
         env:
@@ -75,7 +78,7 @@ jobs:
               exit 1
             fi
           done
-          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          apksigner="${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools/35.0.0/apksigner"
           keystore=$(mktemp)
           trap 'rm -f "$keystore"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"

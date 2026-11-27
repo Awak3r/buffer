@@ -77,15 +77,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4
+        with:
+          cmdline-tools-version: '12266719'
+          log-accepted-android-sdk-licenses: false
+          packages: 'platforms;android-35 build-tools;34.0.0'
       - uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2 # v5
         with:
           gradle-version: '8.9'
       - name: Build unsigned APK and run Android lint
         working-directory: android
-        shell: bash
-        run: |
-          sdkmanager 'platforms;android-35'
-          gradle --no-daemon :app:assembleRelease :app:lintRelease
+        run: gradle --no-daemon :app:assembleRelease :app:lintRelease
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: inputs.upload-release-assets
         with:
