@@ -3,9 +3,12 @@ package ru.buffer;
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.content.Context;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
@@ -13,6 +16,8 @@ import javax.crypto.spec.SecretKeySpec;
 
 final class Transfer {
     private static final int MAX_TEXT_BYTES = 65536;
+    // The relay accepts one request at a time; phone labels share that slot with text.
+    private static final Executor NETWORK = Executors.newSingleThreadExecutor();
     static final String INVALID_TEXT = "Нужен текст до 64 КиБ без нулевых символов.";
 
     static final class Result {
@@ -62,9 +67,13 @@ final class Transfer {
 
     static void run(Activity activity, String value, Consumer<Result> done) {
         byte[] plain = value == null ? null : value.getBytes(StandardCharsets.UTF_8);
-        new Thread(() -> {
+        NETWORK.execute(() -> {
             Result response;
-            try { response = post(Pair.load(activity), plain); }
+            try {
+                Pair pair = Pair.load(activity);
+                response = post(pair, plain);
+                if (response.success) announce(activity, pair);
+            }
             catch (Exception e) {
                 response = error(plain == null ? "Не удалось получить текст. Проверь адрес сервера и сеть."
                     : "Подтверждения нет. Проверь буфер ПК, адрес сервера и сеть.");
@@ -82,19 +91,34 @@ final class Transfer {
                 }
                 done.accept(result);
             });
-        }).start();
+        });
+    }
+
+    static void announce(Context context, Pair pair) {
+        Context app = context.getApplicationContext();
+        NETWORK.execute(() -> PhoneIdentity.publish(app, pair));
+    }
+
+    static HttpURLConnection preparePost(Pair pair, String path, int size, int connectTimeout, int readTimeout)
+        throws IOException {
+        HttpURLConnection c = (HttpURLConnection)new URL(pair.url + path).openConnection();
+        c.setInstanceFollowRedirects(false);
+        c.setConnectTimeout(connectTimeout);
+        c.setReadTimeout(readTimeout);
+        c.setRequestMethod("POST");
+        c.setDoOutput(true);
+        c.setFixedLengthStreamingMode(size);
+        c.setRequestProperty("Authorization", "Bearer " + pair.token);
+        c.setRequestProperty("Content-Type", "application/octet-stream");
+        return c;
     }
 
     private static Result post(Pair p, byte[] plain) throws Exception {
         boolean pulling = plain == null;
         SecretKeySpec key = new SecretKeySpec(p.key, "AES");
         byte[] body = pulling ? Pair.seal(key, new byte[0], "buffer/pull/v1".getBytes(StandardCharsets.UTF_8)) : Pair.seal(key, plain);
-        HttpURLConnection c = (HttpURLConnection)new URL(p.url + (pulling ? "/pull" : "/clip")).openConnection();
+        HttpURLConnection c = preparePost(p, pulling ? "/pull" : "/clip", body.length, 5000, 12000);
         try {
-            c.setInstanceFollowRedirects(false); c.setConnectTimeout(5000); c.setReadTimeout(12000);
-            c.setRequestMethod("POST"); c.setDoOutput(true); c.setFixedLengthStreamingMode(body.length);
-            c.setRequestProperty("Authorization", "Bearer " + p.token);
-            c.setRequestProperty("Content-Type", "application/octet-stream");
             try (OutputStream out = c.getOutputStream()) { out.write(body); }
             switch (c.getResponseCode()) {
                 case 200:

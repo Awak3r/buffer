@@ -2,8 +2,8 @@
     android:width="108dp" android:height="108dp"
     android:viewportWidth="24" android:viewportHeight="24">
     <path
-        android:pathData="M6.5,8.75H17.5m-3,-3 3,3 -3,3M17.5,15.25H6.5m3,-3 -3,3 3,3"
-        android:strokeColor="#FFFFFF"
+        android:pathData="M7,8.875H17m-2.5,-2.5 2.5,2.5 -2.5,2.5M17,15.125H7m2.5,-2.5 -2.5,2.5 2.5,2.5"
+        android:strokeColor="@android:color/white"
         android:strokeWidth="2.1"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"/>

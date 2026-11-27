@@ -50,16 +50,24 @@ func claimInstance(name string) (func(), error) {
 }
 
 func protect(b []byte, decrypt bool) ([]byte, error) {
+	return protectWithEntropy(b, nil, decrypt)
+}
+
+func protectWithEntropy(b, entropy []byte, decrypt bool) ([]byte, error) {
 	if len(b) == 0 {
 		return nil, errors.New("empty configuration")
 	}
 	in := windows.DataBlob{Size: uint32(len(b)), Data: &b[0]}
+	var optionalEntropy *windows.DataBlob
+	if len(entropy) != 0 {
+		optionalEntropy = &windows.DataBlob{Size: uint32(len(entropy)), Data: &entropy[0]}
+	}
 	var out windows.DataBlob
 	var err error
 	if decrypt {
-		err = windows.CryptUnprotectData(&in, nil, nil, 0, nil, 1, &out)
+		err = windows.CryptUnprotectData(&in, nil, optionalEntropy, 0, nil, 1, &out)
 	} else {
-		err = windows.CryptProtectData(&in, nil, nil, 0, nil, 1, &out)
+		err = windows.CryptProtectData(&in, nil, optionalEntropy, 0, nil, 1, &out)
 	}
 	if err != nil {
 		return nil, err

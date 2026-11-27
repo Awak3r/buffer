@@ -1,11 +1,15 @@
 <resources>
-    <color name="ui_page">#0C1424</color>
-    <color name="ui_surface">#141F33</color>
-    <color name="ui_border">#283854</color>
-    <color name="ui_text">#F0F5FF</color>
-    <color name="ui_muted">#B4C4DF</color>
-    <color name="ui_accent">#9EBBFF</color>
-    <color name="ui_tint">#223456</color>
-    <color name="ui_tint_text">#D0DEFF</color>
-    <color name="ui_disabled">#43516A</color>
+    <color name="ui_page">#0D0D0D</color>
+    <color name="ui_surface">#171717</color>
+    <color name="ui_border">#3A3A3A</color>
+    <color name="ui_text">#F5F5F5</color>
+    <color name="ui_muted">#BFBFBF</color>
+    <color name="ui_accent">#F2F2F2</color>
+    <color name="ui_on_accent">#141414</color>
+    <color name="ui_tint">#262626</color>
+    <color name="ui_action_outline">#808080</color>
+    <color name="ui_disabled">#363636</color>
+    <color name="ui_on_disabled">#BDBDBD</color>
+    <color name="ui_primary_ripple">#26000000</color>
+    <color name="ui_secondary_ripple">#26FFFFFF</color>
 </resources>

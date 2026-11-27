@@ -66,6 +66,7 @@ public class Main extends Activity {
                 showPairing(true, pair.deviceName);
                 status.setText("Компьютер привязан.");
                 if (shared != null) transmit();
+                else Transfer.announce(this, pair);
             } catch (Exception e) {
                 status.setText("QR не подходит или ключ не удалось сохранить.");
             }
@@ -74,11 +75,13 @@ public class Main extends Activity {
 
     private void loadDeviceName() {
         new Thread(() -> {
-            String name;
-            try { name = Pair.load(getApplicationContext()).deviceName; }
+            Pair pair;
+            try { pair = Pair.load(getApplicationContext()); }
             catch (Exception e) { return; }
             runOnUiThread(() -> {
-                if (!pairUpdated && !isFinishing() && !isDestroyed()) showPairing(true, name);
+                if (pairUpdated || isFinishing() || isDestroyed()) return;
+                showPairing(true, pair.deviceName);
+                if (shared == null) Transfer.announce(this, pair);
             });
         }).start();
     }

@@ -3,13 +3,43 @@ package delivery
 import (
 	"crypto/cipher"
 	"crypto/rand"
-	"github.com/gorilla/websocket"
+	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
+
+	"github.com/gorilla/websocket"
 )
 
-// Receive acknowledges each message only after write returns successfully.
-func Receive(c *websocket.Conn, g cipher.AEAD, write func(string) error, read func() (string, error)) error {
+const phoneNameAAD = "buffer/phone-name/v1"
+
+func ValidPhoneName(name string) bool {
+	return name != "" && len(name) <= 256 && utf8.ValidString(name) &&
+		utf8.RuneCountInString(name) <= 64 && strings.TrimSpace(name) == name &&
+		strings.IndexFunc(name, func(r rune) bool {
+			return unicode.IsControl(r) || unicode.In(r, unicode.Cf, unicode.Zl, unicode.Zp)
+		}) == -1
+}
+
+func receivePush(g cipher.AEAD, data []byte, write, recordPhone func(string) error) bool {
+	n := g.NonceSize()
+	if len(data) < n+g.Overhead() {
+		return false
+	}
+	nonce, ciphertext := data[:n], data[n:]
+	if plain, err := g.Open(nil, nonce, ciphertext, nil); err == nil {
+		return utf8.Valid(plain) && write(string(plain)) == nil
+	}
+	if recordPhone == nil || len(ciphertext) > g.Overhead()+256 {
+		return false
+	}
+	// The AAD distinguishes metadata from legacy clipboard text without changing the relay envelope.
+	plain, err := g.Open(nil, nonce, ciphertext, []byte(phoneNameAAD))
+	return err == nil && ValidPhoneName(string(plain)) && recordPhone(string(plain)) == nil
+}
+
+// Receive acknowledges requests only after the corresponding operation succeeds.
+func Receive(c *websocket.Conn, g cipher.AEAD, write func(string) error, read func() (string, error), recordPhone func(string) error) error {
 	c.SetReadLimit(96 << 10)
 	c.SetReadDeadline(time.Now().Add(70 * time.Second))
 	pong := c.PingHandler()
@@ -43,11 +73,8 @@ func Receive(c *websocket.Conn, g cipher.AEAD, write func(string) error, read fu
 					}
 				}
 			}
-		} else if len(m.Data) >= g.NonceSize()+g.Overhead() {
-			plain, e := g.Open(nil, m.Data[:g.NonceSize()], m.Data[g.NonceSize():], nil)
-			if e == nil && utf8.Valid(plain) {
-				ok = write(string(plain)) == nil
-			}
+		} else {
+			ok = receivePush(g, m.Data, write, recordPhone)
 		}
 		c.SetWriteDeadline(time.Now().Add(3 * time.Second))
 		if err := c.WriteJSON(struct {

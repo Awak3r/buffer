@@ -1,10 +1,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -28,7 +31,30 @@ func testPairing() pairing {
 }
 
 func TestTrayIcon(t *testing.T) {
-	for _, size := range []uintptr{16, 32} {
+	for _, art := range []struct {
+		size int
+		png  []byte
+	}{{16, trayIcon16}, {32, trayIcon32}} {
+		img, err := png.Decode(bytes.NewReader(art.png))
+		if err != nil || img.Bounds().Dx() != art.size || img.Bounds().Dy() != art.size {
+			t.Fatalf("invalid %d px tray PNG: %v", art.size, err)
+		}
+		for _, pixel := range []struct {
+			x, y int
+			want color.NRGBA
+		}{
+			{0, 0, color.NRGBA{}},
+			{8, 0, color.NRGBA{0x8a, 0x8a, 0x8a, 0xff}},
+			{8, 1, color.NRGBA{0x14, 0x14, 0x14, 0xff}},
+			{8, 5, color.NRGBA{0xff, 0xff, 0xff, 0xff}},
+			{8, 10, color.NRGBA{0xff, 0xff, 0xff, 0xff}},
+		} {
+			x, y := pixel.x*art.size/16, pixel.y*art.size/16
+			if got := color.NRGBAModel.Convert(img.At(x, y)); got != pixel.want {
+				t.Errorf("%d px tray PNG at (%d, %d): got %v, want %v", art.size, x, y, got, pixel.want)
+			}
+		}
+		size := uintptr(art.size)
 		icon, err := newTrayIcon(size, size)
 		if err != nil {
 			t.Fatalf("create %d px tray icon: %v", size, err)
@@ -36,6 +62,15 @@ func TestTrayIcon(t *testing.T) {
 		if ok, _, err := destroyIcon.Call(icon); ok == 0 {
 			t.Fatalf("destroy %d px tray icon: %v", size, err)
 		}
+	}
+}
+
+func TestPhoneMenuLabel(t *testing.T) {
+	if got := phoneMenuLabel(""); got != "Phone: Unknown" {
+		t.Errorf("unknown phone label: %q", got)
+	}
+	if got := phoneMenuLabel("Mia & 李's Phone &&"); got != "Phone: Mia && 李's Phone &&&&" {
+		t.Errorf("escaped phone label: %q", got)
 	}
 }
 
@@ -218,7 +253,10 @@ func TestClientReconnect(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runClient(ctx, endpoint, p.Token, g, &dialer, func(status connectionStatus) { statuses <- status })
+		runClient(ctx, endpoint, p.Token, g, &dialer, func(status connectionStatus) { statuses <- status }, func(string) error {
+			t.Error("unexpected phone-name callback during reconnect test")
+			return nil
+		})
 	}()
 	for _, want := range []connectionStatus{authRejected, connected, retrying, connected} {
 		select {

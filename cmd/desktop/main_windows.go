@@ -37,7 +37,7 @@ func (s connectionStatus) String() string {
 	}
 }
 
-func runClient(ctx context.Context, endpoint, token string, g cipher.AEAD, dialer *websocket.Dialer, status func(connectionStatus)) {
+func runClient(ctx context.Context, endpoint, token string, g cipher.AEAD, dialer *websocket.Dialer, status func(connectionStatus), recordPhone func(string) error) {
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+token)
 	for ctx.Err() == nil {
@@ -46,7 +46,7 @@ func runClient(ctx context.Context, endpoint, token string, g cipher.AEAD, diale
 		if err == nil {
 			stop := context.AfterFunc(ctx, func() { c.Close() })
 			status(connected)
-			_ = delivery.Receive(c, g, writeClipboard, readClipboard)
+			_ = delivery.Receive(c, g, writeClipboard, readClipboard, recordPhone)
 			stop()
 			c.Close()
 		} else if response != nil && (response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden) {
@@ -111,17 +111,14 @@ func main() {
 		return
 	}
 	if missing {
-		var bitmap [][]bool
-		p, bitmap, err = ui.setup(name)
+		var saved bool
+		p, saved, err = ui.setup(name)
 		if err != nil {
 			showMessage(0, err.Error(), mbError)
 			return
 		}
-		if bitmap == nil { // First-run setup was canceled before saving.
+		if !saved { // First-run setup was canceled before saving.
 			return
-		}
-		if err := ui.showStartupQR(bitmap); err != nil {
-			showMessage(0, err.Error()+" "+pairingHelp, mbError)
 		}
 	}
 
@@ -130,8 +127,10 @@ func main() {
 		showMessage(0, invalidPairing, mbError)
 		return
 	}
-	if err := runTray(ui, p, !missing && *showQR, func(ctx context.Context, status func(connectionStatus)) {
-		runClient(ctx, endpoint, p.Token, g, websocket.DefaultDialer, status)
+	phones := openPhoneCache(name, p)
+	defer phones.close()
+	if err := runTray(ui, p, phones, missing || *showQR, func(ctx context.Context, status func(connectionStatus)) {
+		runClient(ctx, endpoint, p.Token, g, websocket.DefaultDialer, status, phones.record)
 	}); err != nil {
 		showMessage(0, "Buffer could not display its notification area icon. Make sure the Windows taskbar is running and try again.", mbError)
 	}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -100,13 +101,14 @@ type tray struct {
 	status           connectionStatus
 	ui               *pairingUI
 	pairing          pairing
+	phones           *phoneCache
 	modern, menuOpen bool
 }
 
-func runTray(ui *pairingUI, p pairing, openQR bool, client func(context.Context, func(connectionStatus))) error {
+func runTray(ui *pairingUI, p pairing, phones *phoneCache, openQR bool, client func(context.Context, func(connectionStatus))) error {
 	name, _ := windows.UTF16PtrFromString(trayClass)
 	taskbar, _ := windows.UTF16PtrFromString("TaskbarCreated")
-	t := tray{ui: ui, pairing: p}
+	t := tray{ui: ui, pairing: p, phones: phones}
 	t.taskbarCreated, _, _ = registerWindowMessage.Call(uintptr(unsafe.Pointer(taskbar)))
 	wc := windowClass{Proc: windows.NewCallback(t.windowProc), Instance: ui.module, ClassName: name}
 	if ok, _, err := registerClass.Call(uintptr(unsafe.Pointer(&wc))); ok == 0 {
@@ -216,6 +218,13 @@ func (t *tray) windowProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	return 0
 }
 
+func phoneMenuLabel(name string) string {
+	if name == "" {
+		return "Phone: Unknown"
+	}
+	return "Phone: " + strings.ReplaceAll(name, "&", "&&")
+}
+
 func (t *tray) showMenu(hwnd uintptr, p point) {
 	if t.menuOpen {
 		return
@@ -238,7 +247,8 @@ func (t *tray) showMenu(hwnd uintptr, p point) {
 		text, _ := windows.UTF16PtrFromString(label)
 		appendMenu.Call(menu, flags, id, uintptr(unsafe.Pointer(text)))
 	}
-	appendMenuItem(mfGrayed, 0, "Buffer: "+t.status.String())
+	appendMenuItem(mfGrayed, 0, "Relay: "+t.status.String())
+	appendMenuItem(mfGrayed, 0, phoneMenuLabel(t.phones.name()))
 	appendMenu.Call(menu, mfSeparator, 0, 0)
 	appendMenuItem(0, menuPair, pairPhoneLabel)
 	appendMenuItem(0, menuExit, "Exit")

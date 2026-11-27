@@ -93,8 +93,8 @@ type pairingUI struct {
 	module, setupProc, qrProc uintptr
 	submit                    func(relay, token string) error
 	qrWindow                  uintptr
-	qrModal                   bool
-	bitmap                    [][]bool
+
+	bitmap [][]bool
 }
 
 func newPairingUI() (*pairingUI, error) {
@@ -119,30 +119,29 @@ func pairingDialogDPI() func() {
 	return func() {}
 }
 
-func (u *pairingUI) setup(path string) (p pairing, bitmap [][]bool, err error) {
+func (u *pairingUI) setup(path string) (p pairing, saved bool, err error) {
 	u.submit = func(relay, token string) error {
 		candidate, err := newPairing(relay, token)
 		if err != nil {
 			return err
 		}
-		code, err := pairingQR(candidate)
-		if err != nil {
+		if _, err := pairingQR(candidate); err != nil {
 			return err
 		}
 		b, err := json.Marshal(candidate) // Keep the stored schema independent of the QR payload.
 		if err != nil || savePairing(path, b) != nil {
 			return errors.New("Buffer could not save the pairing to %APPDATA%\\Buffer\\pair.bin.")
 		}
-		p, bitmap = candidate, code
+		p, saved = candidate, true
 		return nil
 	}
 	defer func() { u.submit = nil }()
 	defer pairingDialogDPI()()
 	r, _, _ := dialogBox.Call(u.module, uintptr(unsafe.Pointer(&setupTemplate[0])), 0, u.setupProc, 0)
 	if r == ^uintptr(0) {
-		return pairing{}, nil, errors.New("Buffer could not open the pairing setup window.")
+		return pairing{}, false, errors.New("Buffer could not open the pairing setup window.")
 	}
-	return p, bitmap, nil
+	return p, saved, nil
 }
 
 func dialogInput(hwnd, id uintptr) string {
@@ -174,17 +173,6 @@ func (u *pairingUI) setupDialogProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 
 var errQRWindow = errors.New("Buffer could not open the pairing QR window.")
 
-func (u *pairingUI) showStartupQR(bitmap [][]bool) error {
-	u.bitmap = bitmap
-	defer func() { u.bitmap = nil }()
-	defer pairingDialogDPI()()
-	r, _, _ := dialogBox.Call(u.module, uintptr(unsafe.Pointer(&qrTemplate[0])), 0, u.qrProc, 1)
-	if r == ^uintptr(0) {
-		return errQRWindow
-	}
-	return nil
-}
-
 func (u *pairingUI) showTrayQR(owner uintptr, p pairing) error {
 	if u.qrWindow != 0 {
 		showWindow.Call(u.qrWindow, 9) // SW_RESTORE
@@ -210,17 +198,13 @@ func (u *pairingUI) showTrayQR(owner uintptr, p pairing) error {
 func (u *pairingUI) qrDialogProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch {
 	case msg == wmInitDlg:
-		u.qrWindow, u.qrModal = hwnd, lParam != 0
+		u.qrWindow = hwnd
 		return 1
 	case msg == wmDrawItem && wParam == idQR:
 		drawQR((*drawItem)(unsafe.Pointer(lParam)), u.bitmap)
 		return 1
 	case msg == wmClose || msg == wmCommand && wParam == idCancel:
-		if u.qrModal {
-			endDialog.Call(hwnd, idOK)
-		} else {
-			destroyWindow.Call(hwnd)
-		}
+		destroyWindow.Call(hwnd)
 		return 1
 	case msg == wmNCDestroy && u.qrWindow == hwnd:
 		u.qrWindow, u.bitmap = 0, nil
