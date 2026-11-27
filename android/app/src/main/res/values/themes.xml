@@ -3,9 +3,7 @@
         <item name="android:colorAccent">@color/ui_accent</item>
         <item name="android:windowBackground">@color/ui_page</item>
         <item name="android:statusBarColor">@color/ui_page</item>
-        <item name="android:navigationBarColor">@color/ui_page</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowLightNavigationBar">true</item>
     </style>
     <style name="Theme.Buffer.Main" parent="Theme.Buffer">
         <item name="android:windowNoTitle">true</item>
