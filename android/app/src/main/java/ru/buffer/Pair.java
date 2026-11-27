@@ -35,7 +35,8 @@ final class Pair {
         if (store.containsAlias(alias)) return (SecretKey)store.getKey(alias, null);
         KeyGenerator gen = KeyGenerator.getInstance("AES", "AndroidKeyStore");
         gen.init(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
-            .setBlockModes("GCM").setEncryptionPaddings("NoPadding").build());
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build());
         return gen.generateKey();
     }
     static byte[] seal(SecretKey key, byte[] plain) throws Exception {
