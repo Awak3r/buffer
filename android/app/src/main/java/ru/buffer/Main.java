@@ -16,7 +16,7 @@ public class Main extends Activity {
     private ProgressBar progress;
     private Button send, pull, clipboardSend;
     private String shared;
-    private boolean sending;
+    private boolean sending, pairUpdated;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -44,8 +44,10 @@ public class Main extends Activity {
         }
         send.setVisibility(shared == null ? View.GONE : View.VISIBLE);
         boolean paired = Pair.file(this).getBaseFile().exists();
-        showPairing(paired);
-        status.setText(paired ? "Скопируй текст на любом из устройств и выбери направление." : "Для привязки запусти buffer.exe на ПК.");
+        showPairing(paired, null);
+        if (paired) loadDeviceName();
+        status.setText(paired ? "Скопируй текст на любом из устройств и выбери направление."
+            : "Открой «Pair phone…» в меню значка Buffer на ПК и отсканируй QR.");
         if (shared != null && paired && state == null) transmit();
         else if (state != null) status.setText(state.getString("status", "Готово"));
     }
@@ -59,8 +61,9 @@ public class Main extends Activity {
         super.onActivityResult(req,result,data);
         if (req == 1 && result == RESULT_OK && data != null) {
             try {
-                Pair.save(this, data.getStringExtra("qr"));
-                showPairing(true);
+                Pair pair = Pair.save(this, data.getStringExtra("qr"));
+                pairUpdated = true;
+                showPairing(true, pair.deviceName);
                 status.setText("Компьютер привязан.");
                 if (shared != null) transmit();
             } catch (Exception e) {
@@ -69,8 +72,20 @@ public class Main extends Activity {
         }
     }
 
-    private void showPairing(boolean paired) {
-        pairBadge.setText(paired ? R.string.paired_badge : R.string.unpaired_badge);
+    private void loadDeviceName() {
+        new Thread(() -> {
+            String name;
+            try { name = Pair.load(getApplicationContext()).deviceName; }
+            catch (Exception e) { return; }
+            runOnUiThread(() -> {
+                if (!pairUpdated && !isFinishing() && !isDestroyed()) showPairing(true, name);
+            });
+        }).start();
+    }
+
+    private void showPairing(boolean paired, String name) {
+        if (name != null) pairBadge.setText(getString(R.string.paired_device, name));
+        else pairBadge.setText(paired ? R.string.paired_device_unknown : R.string.unpaired_badge);
     }
 
     private void chooseTile() {

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -63,8 +64,9 @@ func runClient(ctx context.Context, endpoint, token string, g cipher.AEAD, diale
 	}
 }
 
-const pairingHelp = "To show your pairing QR again, choose Exit in the Buffer tray menu, then run buffer.exe -pair. " +
-	"Press Enter after scanning to close the pairing console and return to the tray."
+const pairPhoneLabel = "Pair phone…"
+
+const pairingHelp = "To show the pairing QR, right-click the Buffer icon in the notification area (including hidden icons) and choose “" + pairPhoneLabel + "”."
 
 const invalidPairing = "Buffer could not read or validate %APPDATA%\\Buffer\\pair.bin. " +
 	"Restore a valid file, or move it aside and start Buffer again to set up a new pairing."
@@ -100,14 +102,26 @@ func main() {
 		showMessage(0, invalidPairing, mbError)
 		return
 	}
+	// Pairing dialogs, the tray window, and the message loop share one Windows thread.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	ui, err := newPairingUI()
+	if err != nil {
+		showMessage(0, "Buffer could not initialize its Windows interface.", mbError)
+		return
+	}
 	if missing {
-		if !*showQR && showMessage(0, "Buffer is not paired on this PC. Open the temporary pairing console to set it up now?", mbSetup) != idYes {
-			return
-		}
-		p, err = showPairing(name, p, true)
+		var bitmap [][]bool
+		p, bitmap, err = ui.setup(name)
 		if err != nil {
 			showMessage(0, err.Error(), mbError)
 			return
+		}
+		if bitmap == nil { // First-run setup was canceled before saving.
+			return
+		}
+		if err := ui.showStartupQR(bitmap); err != nil {
+			showMessage(0, err.Error()+" "+pairingHelp, mbError)
 		}
 	}
 
@@ -116,13 +130,7 @@ func main() {
 		showMessage(0, invalidPairing, mbError)
 		return
 	}
-	if !missing && *showQR {
-		if _, err := showPairing(name, p, false); err != nil {
-			showMessage(0, err.Error(), mbError)
-			return
-		}
-	}
-	if err := runTray(func(ctx context.Context, status func(connectionStatus)) {
+	if err := runTray(ui, p, !missing && *showQR, func(ctx context.Context, status func(connectionStatus)) {
 		runClient(ctx, endpoint, p.Token, g, websocket.DefaultDialer, status)
 	}); err != nil {
 		showMessage(0, "Buffer could not display its notification area icon. Make sure the Windows taskbar is running and try again.", mbError)

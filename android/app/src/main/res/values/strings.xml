@@ -2,7 +2,8 @@
     <string name="app_name">Буфер</string>
     <string name="share_target_name">На компьютер</string>
     <string name="main_subtitle">Android ↔ Windows</string>
-    <string name="paired_badge">ПК привязан</string>
+    <string name="paired_device">ПК · %1$s</string>
+    <string name="paired_device_unknown">ПК · без имени</string>
     <string name="unpaired_badge">Нет привязки</string>
     <string name="status_title">Состояние</string>
     <string name="scan_pair">Сканировать QR с компьютера</string>

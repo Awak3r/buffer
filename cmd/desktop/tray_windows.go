@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"runtime"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -13,8 +12,6 @@ const (
 	mbForeground = 0x10000
 	mbError      = 0x10
 	mbInfo       = 0x40
-	mbSetup      = 0x4 | 0x20 // MB_YESNO | MB_ICONQUESTION
-	idYes        = 6
 
 	wmClose       = 0x0010
 	wmContextMenu = 0x007b
@@ -101,28 +98,22 @@ type tray struct {
 	icon             notifyIcon
 	taskbarCreated   uintptr
 	status           connectionStatus
+	ui               *pairingUI
+	pairing          pairing
 	modern, menuOpen bool
 }
 
-func runTray(client func(context.Context, func(connectionStatus))) error {
-	// The window, message loop, and menu all belong to this Windows thread.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	var module windows.Handle
-	if err := windows.GetModuleHandleEx(windows.GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, nil, &module); err != nil {
-		return err
-	}
+func runTray(ui *pairingUI, p pairing, openQR bool, client func(context.Context, func(connectionStatus))) error {
 	name, _ := windows.UTF16PtrFromString(trayClass)
 	taskbar, _ := windows.UTF16PtrFromString("TaskbarCreated")
-	t := tray{}
+	t := tray{ui: ui, pairing: p}
 	t.taskbarCreated, _, _ = registerWindowMessage.Call(uintptr(unsafe.Pointer(taskbar)))
-	wc := windowClass{Proc: windows.NewCallback(t.windowProc), Instance: uintptr(module), ClassName: name}
+	wc := windowClass{Proc: windows.NewCallback(t.windowProc), Instance: ui.module, ClassName: name}
 	if ok, _, err := registerClass.Call(uintptr(unsafe.Pointer(&wc))); ok == 0 {
 		return err
 	}
 	// A hidden top-level window (not HWND_MESSAGE) receives Explorer's TaskbarCreated broadcast.
-	hwnd, _, err := createWindow.Call(0, uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0, 0, 0, uintptr(module), 0)
+	hwnd, _, err := createWindow.Call(0, uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0, 0, 0, ui.module, 0)
 	if hwnd == 0 {
 		return err
 	}
@@ -141,6 +132,9 @@ func runTray(client func(context.Context, func(connectionStatus))) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go client(ctx, func(status connectionStatus) { postMessage.Call(hwnd, wmStatus, uintptr(status), 0) })
+	if openQR {
+		t.showPairing(hwnd)
+	}
 	for {
 		var msg windowMessage
 		r, _, err := getMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
@@ -149,6 +143,11 @@ func runTray(client func(context.Context, func(connectionStatus))) error {
 			return err
 		case 0:
 			return nil
+		}
+		if ui.qrWindow != 0 {
+			if handled, _, _ := isDialogMessage.Call(ui.qrWindow, uintptr(unsafe.Pointer(&msg))); handled != 0 {
+				continue
+			}
 		}
 		translateMessage.Call(uintptr(unsafe.Pointer(&msg)))
 		dispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
@@ -229,7 +228,7 @@ func (t *tray) showMenu(hwnd uintptr, p point) {
 	}
 	defer destroyMenu.Call(menu)
 	const (
-		menuHelp    = 1
+		menuPair    = 1
 		menuExit    = 2
 		mfGrayed    = 1
 		mfSeparator = 0x800
@@ -241,17 +240,23 @@ func (t *tray) showMenu(hwnd uintptr, p point) {
 	}
 	appendMenuItem(mfGrayed, 0, "Buffer: "+t.status.String())
 	appendMenu.Call(menu, mfSeparator, 0, 0)
-	appendMenuItem(0, menuHelp, "Pairing help…")
+	appendMenuItem(0, menuPair, pairPhoneLabel)
 	appendMenuItem(0, menuExit, "Exit")
 	setForegroundWindow.Call(hwnd)
 	selected, _, _ := trackPopupMenu.Call(menu, tpmFlags, uintptr(p.X), uintptr(p.Y), 0, hwnd, 0)
 	postMessage.Call(hwnd, 0, 0, 0) // WM_NULL lets subsequent tray menus dismiss correctly.
 	switch selected {
-	case menuHelp:
-		showMessage(hwnd, pairingHelp, mbInfo)
+	case menuPair:
+		t.showPairing(hwnd)
 	case menuExit:
 		postQuitMessage.Call(0)
 	default:
 		t.notify(nimSetFocus)
+	}
+}
+
+func (t *tray) showPairing(hwnd uintptr) {
+	if err := t.ui.showTrayQR(hwnd, t.pairing); err != nil {
+		showMessage(hwnd, err.Error(), mbError)
 	}
 }

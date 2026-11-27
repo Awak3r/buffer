@@ -6,8 +6,8 @@ android {
         applicationId 'ru.buffer'
         minSdk 26
         targetSdk 32
-        versionCode 4
-        versionName '0.3.1'
+        versionCode 5
+        versionName '0.3.2'
     }
     lint {
         // Releases are sideloaded from GitHub, so Google Play policy is advisory here.

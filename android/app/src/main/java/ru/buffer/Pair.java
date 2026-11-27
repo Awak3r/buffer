@@ -15,7 +15,7 @@ import javax.crypto.*;
 import javax.crypto.spec.*;
 
 final class Pair {
-    final String url, token;
+    final String url, token, deviceName;
     final byte[] key;
     Pair(String json) throws Exception {
         JSONObject p = new JSONObject(json);
@@ -23,6 +23,8 @@ final class Pair {
         URI u = new URI(url);
         token = p.getString("token");
         key = Base64.decode(p.getString("key"), Base64.NO_WRAP);
+        Object name = p.opt("device_name");
+        deviceName = name instanceof String && ((String)name).matches("[A-Za-z0-9._-]{1,63}") ? (String)name : null;
         if (!"https".equals(u.getScheme()) || u.getHost() == null || u.getUserInfo() != null ||
             !u.getRawPath().isEmpty() || u.getQuery() != null || u.getFragment() != null ||
             !token.matches("[!-~]{32,256}") || key.length != 32) throw new IOException("Invalid pairing");
@@ -52,13 +54,14 @@ final class Pair {
         out.write(iv); out.write(cipher.doFinal(plain));
         return out.toByteArray();
     }
-    static void save(Context c, String json) throws Exception {
-        new Pair(json);
+    static Pair save(Context c, String json) throws Exception {
+        Pair pair = new Pair(json);
         byte[] bytes = seal(localKey(), json.getBytes(StandardCharsets.UTF_8));
         AtomicFile f = file(c);
         FileOutputStream out = f.startWrite();
         try { out.write(bytes); f.finishWrite(out); }
         catch (IOException e) { f.failWrite(out); throw e; }
+        return pair;
     }
     static Pair load(Context c) throws Exception {
         byte[] b = file(c).readFully();

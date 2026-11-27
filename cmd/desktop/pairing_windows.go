@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -42,7 +41,7 @@ func claimInstance(name string) (func(), error) {
 	h, err := windows.CreateMutex(nil, false, mutexName)
 	if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
 		windows.CloseHandle(h)
-		return nil, errors.New("Buffer is already running for this pairing. Check the notification area, including hidden icons. " + pairingHelp)
+		return nil, errors.New("Buffer is already running for this pairing. " + pairingHelp)
 	}
 	if err != nil {
 		return nil, errors.New("Buffer could not check whether another copy is running. Close any other Buffer instance and try again.")
@@ -140,101 +139,59 @@ func (p pairing) clientConfig() (string, cipher.AEAD, error) {
 	return u.String(), g, err
 }
 
-func promptPairing(in, out *os.File, reader *bufio.Reader) (pairing, error) {
-	fmt.Fprint(out, "Relay HTTPS URL: ")
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return pairing{}, errors.New("Could not read the relay URL from the pairing console.")
-	}
-	u, err := relayURL(strings.TrimSpace(line))
+func newPairing(relay, token string) (pairing, error) {
+	u, err := relayURL(strings.TrimSpace(relay))
 	if err != nil {
 		return pairing{}, err
 	}
-
-	// Read the token only after disabling echo on the actual console input handle.
-	h := windows.Handle(in.Fd())
-	var mode uint32
-	if windows.GetConsoleMode(h, &mode) != nil || windows.SetConsoleMode(h, mode&^windows.ENABLE_ECHO_INPUT) != nil {
-		return pairing{}, errors.New("Could not disable input echo in the pairing console.")
-	}
-	defer windows.SetConsoleMode(h, mode)
-	fmt.Fprint(out, "BUFFER_TOKEN from server (input hidden): ")
-	line, err = reader.ReadString('\n')
-	fmt.Fprintln(out)
-	if err != nil {
-		return pairing{}, errors.New("Could not read the token from the pairing console.")
-	}
-	token := strings.TrimSpace(line)
+	token = strings.TrimSpace(token)
 	if !validToken(token) {
 		return pairing{}, errors.New("The relay token must be at least 32 bytes and contain no control characters.")
 	}
 	var key [32]byte
 	rand.Read(key[:])
-	return pairing{u.String(), token, base64.StdEncoding.EncodeToString(key[:])}, nil
+	return pairing{URL: u.String(), Token: token, Key: base64.StdEncoding.EncodeToString(key[:])}, nil
 }
 
-var (
-	allocConsole    = kernel.NewProc("AllocConsole")
-	freeConsole     = kernel.NewProc("FreeConsole")
-	setConsoleTitle = kernel.NewProc("SetConsoleTitleW")
-)
-
-func openConsoleFile(name string) (*os.File, error) {
-	path, _ := windows.UTF16PtrFromString(name)
-	// Go uses GetConsoleMode (which needs read access) to select Unicode console I/O.
-	h, err := windows.CreateFile(path, windows.GENERIC_READ|windows.GENERIC_WRITE,
-		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, 0, 0)
-	if err != nil {
-		return nil, err
+func validDeviceName(name string) bool {
+	if len(name) == 0 || len(name) > 63 {
+		return false
 	}
-	return os.NewFile(uintptr(h), name), nil
-}
-
-func showPairing(name string, p pairing, setup bool) (pairing, error) {
-	// Use a dedicated console, never the caller's terminal or inherited stdio.
-	freeConsole.Call()
-	if ok, _, _ := allocConsole.Call(); ok == 0 {
-		return p, errors.New("Buffer could not open the temporary pairing console.")
-	}
-	defer freeConsole.Call()
-	title, _ := windows.UTF16PtrFromString("Buffer Pairing")
-	setConsoleTitle.Call(uintptr(unsafe.Pointer(title)))
-	in, err := openConsoleFile("CONIN$")
-	if err != nil {
-		return p, errors.New("Buffer could not open pairing console input.")
-	}
-	defer in.Close()
-	out, err := openConsoleFile("CONOUT$")
-	if err != nil {
-		return p, errors.New("Buffer could not open pairing console output.")
-	}
-	defer out.Close()
-	reader := bufio.NewReader(in)
-	if setup {
-		p, err = promptPairing(in, out, reader)
-		if err != nil {
-			return p, err
+	for i := range len(name) {
+		c := name[i]
+		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return false
 		}
 	}
-	b, err := json.Marshal(p)
-	if err != nil {
-		return p, errors.New("Buffer could not encode the pairing.")
+	return true
+}
+
+func pairingQR(p pairing) ([][]bool, error) {
+	name, _ := os.Hostname()
+	return encodePairingQR(p, name)
+}
+
+func encodePairingQR(p pairing, name string) ([][]bool, error) {
+	if !validDeviceName(name) {
+		name = ""
 	}
-	code, err := qr.New(string(b), qr.Medium)
-	if err != nil {
-		return p, errors.New("The pairing data could not fit in a QR code.")
+	payload := struct {
+		pairing
+		DeviceName string `json:"device_name,omitempty"`
+	}{p, name}
+	for {
+		b, err := json.Marshal(payload)
+		if err != nil {
+			return nil, errors.New("Buffer could not encode the pairing.")
+		}
+		code, err := qr.New(string(b), qr.Medium)
+		if err == nil {
+			return code.Bitmap(), nil // Includes the four-module quiet zone.
+		}
+		if payload.DeviceName == "" {
+			return nil, errors.New("The pairing data could not fit in a QR code.")
+		}
+		// An optional device name must not make an existing pairing unscannable.
+		payload.DeviceName = ""
 	}
-	if setup && savePairing(name, b) != nil {
-		return p, errors.New("Buffer could not save the pairing to %APPDATA%\\Buffer\\pair.bin.")
-	}
-	if _, err := fmt.Fprintln(out, "Scan with Buffer on Android. Keep this QR private. Maximize the console if the QR wraps."); err != nil {
-		return p, errors.New("Buffer could not write to the pairing console.")
-	}
-	if _, err := fmt.Fprint(out, code.ToSmallString(false), "Press Enter after scanning to start Buffer in the tray: "); err != nil {
-		return p, errors.New("Buffer could not display the pairing QR.")
-	}
-	if _, err := reader.ReadString('\n'); err != nil {
-		return p, errors.New("Pairing console input ended early. Run buffer.exe -pair to show the QR again.")
-	}
-	return p, nil
 }

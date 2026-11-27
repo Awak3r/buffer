@@ -9,12 +9,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gorilla/websocket"
+	qr "github.com/skip2/go-qrcode"
 )
 
 func testPairing() pairing {
@@ -62,6 +64,70 @@ func TestClientConfig(t *testing.T) {
 			tc.change(&p)
 			if _, _, err := p.clientConfig(); err == nil {
 				t.Fatal("invalid configuration accepted")
+			}
+		})
+	}
+}
+
+func TestNewPairing(t *testing.T) {
+	p, err := newPairing("  https://clip.example.test/  ", " "+testPairing().Token+" ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.URL != "https://clip.example.test" || p.Token != testPairing().Token {
+		t.Fatal("setup did not normalize the input")
+	}
+	if _, _, err := p.clientConfig(); err != nil {
+		t.Fatal("setup did not produce valid desktop credentials")
+	}
+	for _, text := range []string{"short", p.Token + "\ninvalid"} {
+		if _, err := newPairing(p.URL, text); err == nil {
+			t.Fatal("setup accepted an invalid token")
+		}
+	}
+}
+
+func TestPairingQR(t *testing.T) {
+	for _, tc := range []struct {
+		name, hostname, want string
+		longToken            bool
+	}{
+		{name: "normal", hostname: "Desk_01.Home-PC", want: "Desk_01.Home-PC"},
+		{name: "63 characters", hostname: strings.Repeat("X", 63), want: strings.Repeat("X", 63)},
+		{name: "too long", hostname: strings.Repeat("X", 64)},
+		{name: "absent"},
+		{name: "space", hostname: "Desk PC"},
+		{name: "non-ASCII", hostname: "Désktop"},
+		{name: "punctuation", hostname: "Desk/PC"},
+		{name: "limited capacity", hostname: strings.Repeat("X", 63), longToken: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := testPairing()
+			if tc.longToken {
+				p.Token = strings.Repeat("a", 2210)
+			}
+			bitmap, err := encodePairingQR(p, tc.hostname)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored, err := json.Marshal(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := string(stored)
+			if tc.want != "" {
+				payload = strings.TrimSuffix(payload, "}") + `,"device_name":"` + tc.want + `"}`
+			}
+			code, err := qr.New(payload, qr.Medium)
+			if err != nil || !reflect.DeepEqual(bitmap, code.Bitmap()) {
+				t.Fatal("QR did not encode the expected payload")
+			}
+			for y, row := range bitmap {
+				for x, set := range row {
+					if set && (x < 4 || y < 4 || x >= len(row)-4 || y >= len(bitmap)-4) {
+						t.Fatal("QR quiet zone was not blank")
+					}
+				}
 			}
 		})
 	}
