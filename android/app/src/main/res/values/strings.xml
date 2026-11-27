@@ -1,0 +1,5 @@
+<resources>
+    <string name="tile_send">Отправить на ПК</string>
+    <string name="tile_pull">Забрать с ПК</string>
+    <string name="tiles_hint">Для быстрого доступа добавь плитки «Отправить на ПК» и «Забрать с ПК» в редакторе быстрых настроек Android.</string>
+</resources>

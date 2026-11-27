@@ -1,0 +1,121 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check version and main ancestry
+        shell: bash
+        run: |
+          version=$(sed -n "s/^[[:space:]]*versionName '\([^']*\)'[[:space:]]*$/\1/p" android/app/build.gradle)
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ || "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo 'Release tag must be vMAJOR.MINOR.PATCH and match Android versionName.' >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo 'Release tag must point to a commit on main.' >&2
+            exit 1
+          fi
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      upload-release-assets: true
+
+  package:
+    name: Sign APK and package release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: unsigned-release-*
+          merge-multiple: true
+          path: build-assets
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build tools
+        run: sdkmanager 'build-tools;35.0.0'
+      - name: Sign and verify Android APK
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for setting in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS; do
+            if [[ -z "${!setting}" ]]; then
+              echo "Missing release secret: $setting" >&2
+              exit 1
+            fi
+          done
+          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          keystore=$(mktemp)
+          trap 'rm -f "$keystore"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          mkdir -p release-assets
+          "$apksigner" sign --ks "$keystore" --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass env:ANDROID_KEYSTORE_PASSWORD --key-pass env:ANDROID_KEY_PASSWORD \
+            --out release-assets/buffer-android.apk build-assets/app-release-unsigned.apk
+          "$apksigner" verify --verbose release-assets/buffer-android.apk
+      - name: Package release bundle
+        shell: bash
+        run: |
+          mkdir -p package/buffer/dist
+          cp -r README.md Caddyfile buffer-relay.service notices package/buffer/
+          cp build-assets/buffer.exe release-assets/
+          cp release-assets/buffer-android.apk release-assets/buffer.exe package/buffer/dist/
+          install -m 755 build-assets/buffer-relay-linux-amd64 build-assets/buffer-relay-linux-arm64 package/buffer/dist/
+          (cd package && zip -qr "../release-assets/buffer-$GITHUB_REF_NAME.zip" buffer)
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-assets
+          if-no-files-found: error
+          path: release-assets/
+
+  publish:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: release-assets
+          path: release-assets
+      - name: Publish versioned assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+            release-assets/buffer-android.apk release-assets/buffer.exe "release-assets/buffer-$GITHUB_REF_NAME.zip"
