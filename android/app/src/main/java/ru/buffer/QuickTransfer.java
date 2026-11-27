@@ -2,12 +2,11 @@ package ru.buffer;
 
 import android.app.Activity;
 import android.app.KeyguardManager;
-
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.Button;
-import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -16,29 +15,24 @@ public final class QuickTransfer extends Activity {
     static final String PULL = "ru.buffer.QUICK_PULL";
 
     private TextView status;
+    private ProgressBar progress;
     private Button close;
     private boolean started;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         setFinishOnTouchOutside(false);
-        LinearLayout view = new LinearLayout(this);
-        view.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int)(20 * getResources().getDisplayMetrics().density);
-        view.setPadding(pad, pad, pad, pad);
-        status = new TextView(this);
-        status.setTextSize(18);
-        view.addView(status);
-        close = new Button(this);
-        close.setText("Закрыть");
+        setContentView(R.layout.activity_quick_transfer);
+        TextView title = findViewById(R.id.quick_title);
+        title.setText(PULL.equals(getIntent().getAction()) ? R.string.quick_pull_title : R.string.quick_send_title);
+        status = findViewById(R.id.quick_status);
+        progress = findViewById(R.id.quick_progress);
+        close = findViewById(R.id.quick_close);
         close.setOnClickListener(v -> finish());
-        view.addView(close);
-        setContentView(view);
-        if (state != null) {
-            started = state.getBoolean("started");
-            status.setText(state.getString("status"));
+        if (state != null && state.getBoolean("started")) {
+            started = true;
+            showError(state.getString("status"));
         }
-        close.setVisibility(started ? View.VISIBLE : View.GONE);
     }
 
     @Override public void onSaveInstanceState(Bundle state) {
@@ -92,6 +86,7 @@ public final class QuickTransfer extends Activity {
 
     private void showError(String message) {
         status.setText(message);
+        progress.setVisibility(View.GONE);
         close.setVisibility(View.VISIBLE);
     }
 }

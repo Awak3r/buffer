@@ -1,0 +1,13 @@
+<resources>
+    <color name="brand_blue">#1D4ED8</color>
+    <color name="hero_caption">#DBE8FF</color>
+    <color name="ui_page">#F2F5FC</color>
+    <color name="ui_surface">#FFFFFF</color>
+    <color name="ui_border">#DCE5F4</color>
+    <color name="ui_text">#13223C</color>
+    <color name="ui_muted">#475A78</color>
+    <color name="ui_accent">#1D4ED8</color>
+    <color name="ui_tint">#EAF0FF</color>
+    <color name="ui_tint_text">#20449E</color>
+    <color name="ui_disabled">#54627D</color>
+</resources>

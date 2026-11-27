@@ -1,4 +1,20 @@
 <resources>
+    <string name="app_name">Буфер</string>
+    <string name="share_target_name">На компьютер</string>
+    <string name="main_subtitle">Android ↔ Windows</string>
+    <string name="paired_badge">ПК привязан</string>
+    <string name="unpaired_badge">Нет привязки</string>
+    <string name="status_title">Состояние</string>
+    <string name="scan_pair">Сканировать QR с компьютера</string>
+    <string name="transfer_title">Передача текста</string>
+    <string name="share_send">Отправить выбранный текст</string>
+    <string name="clipboard_send">Отправить буфер телефона</string>
+    <string name="tiles_title">Быстрый доступ</string>
+    <string name="add_tile">Добавить плитку</string>
+    <string name="quick_send_title">Отправка на ПК</string>
+    <string name="quick_pull_title">Получение с ПК</string>
+    <string name="quick_preparing">Подготавливаю передачу…</string>
+    <string name="quick_close">Закрыть</string>
     <string name="tile_send">Отправить на ПК</string>
     <string name="tile_pull">Забрать с ПК</string>
     <string name="tiles_hint">Для быстрого доступа добавь плитки «Отправить на ПК» и «Забрать с ПК» в редакторе быстрых настроек Android.</string>

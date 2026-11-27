@@ -25,6 +25,18 @@ func testPairing() pairing {
 	}
 }
 
+func TestTrayIcon(t *testing.T) {
+	for _, size := range []uintptr{16, 32} {
+		icon, err := newTrayIcon(size, size)
+		if err != nil {
+			t.Fatalf("create %d px tray icon: %v", size, err)
+		}
+		if ok, _, err := destroyIcon.Call(icon); ok == 0 {
+			t.Fatalf("destroy %d px tray icon: %v", size, err)
+		}
+	}
+}
+
 func TestClientConfig(t *testing.T) {
 	p := testPairing()
 	endpoint, g, err := p.clientConfig()

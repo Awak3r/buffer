@@ -1,0 +1,17 @@
+<resources>
+    <style name="Theme.Buffer" parent="android:style/Theme.Material">
+        <item name="android:colorAccent">@color/ui_accent</item>
+        <item name="android:windowBackground">@color/ui_page</item>
+        <item name="android:statusBarColor">@color/ui_page</item>
+        <item name="android:navigationBarColor">@color/ui_page</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+    <style name="Theme.Buffer.Quick" parent="android:style/Theme.Material.Dialog.NoActionBar">
+        <item name="android:colorAccent">@color/ui_accent</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimAmount">0.40</item>
+        <item name="android:windowMinWidthMinor">86%</item>
+        <item name="android:windowMinWidthMajor">54%</item>
+    </style>
+</resources>

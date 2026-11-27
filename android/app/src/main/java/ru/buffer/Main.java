@@ -12,32 +12,30 @@ import android.view.View;
 import android.widget.*;
 
 public class Main extends Activity {
-    private TextView status;
+    private TextView status, pairBadge;
+    private ProgressBar progress;
     private Button send, pull, clipboardSend;
     private String shared;
     private boolean sending;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        LinearLayout view = new LinearLayout(this);
-        view.setOrientation(LinearLayout.VERTICAL);
-        int pad = (int)(20 * getResources().getDisplayMetrics().density);
-        view.setPadding(pad,pad,pad,pad);
-        status = new TextView(this); status.setTextSize(18); view.addView(status);
-        Button scan = new Button(this); scan.setText("Сканировать QR с компьютера");
-        scan.setOnClickListener(v -> startActivityForResult(new Intent(this, Scan.class), 1)); view.addView(scan);
-        send = new Button(this); send.setText(R.string.tile_send); send.setOnClickListener(v -> transmit()); view.addView(send);
-        clipboardSend = new Button(this); clipboardSend.setText("Отправить буфер телефона");
-        clipboardSend.setOnClickListener(v -> sendClipboard()); view.addView(clipboardSend);
-        pull = new Button(this); pull.setText(R.string.tile_pull);
-        pull.setOnClickListener(v -> transfer(null)); view.addView(pull);
-        TextView hint = new TextView(this); hint.setPadding(0, pad, 0, 0);
-        hint.setText(R.string.tiles_hint); view.addView(hint);
+        setContentView(R.layout.activity_main);
+        status = findViewById(R.id.status);
+        pairBadge = findViewById(R.id.pair_badge);
+        progress = findViewById(R.id.main_progress);
+        findViewById(R.id.scan).setOnClickListener(v -> startActivityForResult(new Intent(this, Scan.class), 1));
+        send = findViewById(R.id.share_send);
+        send.setOnClickListener(v -> transmit());
+        clipboardSend = findViewById(R.id.clipboard_send);
+        clipboardSend.setOnClickListener(v -> sendClipboard());
+        pull = findViewById(R.id.pull);
+        pull.setOnClickListener(v -> transfer(null));
         if (Build.VERSION.SDK_INT >= 33) {
-            Button addTile = new Button(this); addTile.setText("Добавить плитку");
-            addTile.setOnClickListener(v -> chooseTile()); view.addView(addTile);
+            View addTile = findViewById(R.id.add_tile);
+            addTile.setVisibility(View.VISIBLE);
+            addTile.setOnClickListener(v -> chooseTile());
         }
-        ScrollView scroll = new ScrollView(this); scroll.addView(view); setContentView(scroll);
         Intent i = getIntent();
         if (Intent.ACTION_SEND.equals(i.getAction()) && i.getType() != null && i.getType().startsWith("text/")) {
             CharSequence text = i.getCharSequenceExtra(Intent.EXTRA_TEXT);
@@ -46,6 +44,7 @@ public class Main extends Activity {
         }
         send.setVisibility(shared == null ? View.GONE : View.VISIBLE);
         boolean paired = Pair.file(this).getBaseFile().exists();
+        showPairing(paired);
         status.setText(paired ? "Скопируй текст на любом из устройств и выбери направление." : "Для привязки запусти buffer.exe на ПК.");
         if (shared != null && paired && state == null) transmit();
         else if (state != null) status.setText(state.getString("status", "Готово"));
@@ -59,10 +58,19 @@ public class Main extends Activity {
     @Override public void onActivityResult(int req, int result, Intent data) {
         super.onActivityResult(req,result,data);
         if (req == 1 && result == RESULT_OK && data != null) {
-            try { Pair.save(this,data.getStringExtra("qr")); status.setText("Компьютер привязан.");
-                  if (shared != null) transmit(); }
-            catch (Exception e) { status.setText("QR не подходит или ключ не удалось сохранить."); }
+            try {
+                Pair.save(this, data.getStringExtra("qr"));
+                showPairing(true);
+                status.setText("Компьютер привязан.");
+                if (shared != null) transmit();
+            } catch (Exception e) {
+                status.setText("QR не подходит или ключ не удалось сохранить.");
+            }
         }
+    }
+
+    private void showPairing(boolean paired) {
+        pairBadge.setText(paired ? R.string.paired_badge : R.string.unpaired_badge);
     }
 
     private void chooseTile() {
@@ -99,10 +107,19 @@ public class Main extends Activity {
         if (sending) return;
         if (!Pair.file(this).getBaseFile().exists()) { status.setText("Сначала привяжи компьютер по QR."); return; }
         if (!Transfer.valid(value)) { status.setText(Transfer.INVALID_TEXT); return; }
-        sending = true; send.setEnabled(false); pull.setEnabled(false); clipboardSend.setEnabled(false); status.setText(Transfer.progress(value));
+        setBusy(true);
+        status.setText(Transfer.progress(value));
         Transfer.run(this, value, result -> {
-            sending = false; send.setEnabled(true); pull.setEnabled(true); clipboardSend.setEnabled(true);
+            setBusy(false);
             status.setText(result.message);
         });
+    }
+
+    private void setBusy(boolean busy) {
+        sending = busy;
+        send.setEnabled(!busy);
+        pull.setEnabled(!busy);
+        clipboardSend.setEnabled(!busy);
+        progress.setVisibility(busy ? View.VISIBLE : View.GONE);
     }
 }

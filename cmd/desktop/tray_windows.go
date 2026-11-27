@@ -41,7 +41,6 @@ var (
 	registerClass         = user.NewProc("RegisterClassW")
 	registerWindowMessage = user.NewProc("RegisterWindowMessageW")
 	defWindowProc         = user.NewProc("DefWindowProcW")
-	loadIcon              = user.NewProc("LoadIconW")
 	getMessage            = user.NewProc("GetMessageW")
 	translateMessage      = user.NewProc("TranslateMessage")
 	dispatchMessage       = user.NewProc("DispatchMessageW")
@@ -128,10 +127,11 @@ func runTray(client func(context.Context, func(connectionStatus))) error {
 		return err
 	}
 	defer destroyWindow.Call(hwnd)
-	icon, _, err := loadIcon.Call(0, 32512) // IDI_APPLICATION (shared system icon)
-	if icon == 0 {
+	icon, err := loadTrayIcon()
+	if err != nil {
 		return err
 	}
+	defer destroyIcon.Call(icon) // Keep the handle alive through re-registration and NIM_DELETE.
 	t.icon = notifyIcon{Size: uint32(unsafe.Sizeof(t.icon)), Window: hwnd, ID: 1, Icon: icon, Callback: wmTray, Version: 4}
 	if !t.addIcon() {
 		return errors.New("could not add notification icon")

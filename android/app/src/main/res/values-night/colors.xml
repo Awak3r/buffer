@@ -1,0 +1,11 @@
+<resources>
+    <color name="ui_page">#0C1424</color>
+    <color name="ui_surface">#141F33</color>
+    <color name="ui_border">#283854</color>
+    <color name="ui_text">#F0F5FF</color>
+    <color name="ui_muted">#B4C4DF</color>
+    <color name="ui_accent">#9EBBFF</color>
+    <color name="ui_tint">#223456</color>
+    <color name="ui_tint_text">#D0DEFF</color>
+    <color name="ui_disabled">#43516A</color>
+</resources>
